@@ -1,0 +1,53 @@
+-- Compilation Process --
+
+Compilation: arm-none-eabi-gcc -mcpu=cortex-m4 main.c -c
+
+Creates main.o with sections:
+  .text    - executable code (2 bytes)
+  .data    - initialized globals (empty, 0 bytes) 
+  .bss     - uninitialized globals (empty, 0 bytes)
+  .vectors - interrupt vector table (107 entries × 4 bytes = 428 bytes)
+
+Size vs Algn in objdump output:
+  Size = total bytes the section occupies
+  Algn = alignment requirement (section must start at address divisible by 2^n)
+  For .vectors: Size = 428 bytes, Algn 2**2 = 4-byte boundary
+  Alignment matters because vector entries are 32-bit words
+
+VMA = Virtual Memory Address (where the section will be when the program runs)
+LMA = Load Memory Address (where the section is stored before execution, e.g., in flash)
+In the object file, VMA/LMA = 0 because linking hasn't happened yet.
+The linker assigns final addresses using link.ld.
+
+Cross compiler needed: produces ARM code, not x86.
+-mcpu=cortex-m4: targets our specific ARM core.
+
+-- Linking and Flashing Process --
+
+Link command:
+  arm-none-eabi-gcc -T link.ld -nostdlib main.o -o firmware.elf
+
+  -T link.ld       use our custom linker script
+  -nostdlib        do not link standard libraries (we provide everything ourselves)
+  Output: firmware.elf (complete program with final memory addresses)
+
+Inspect final sections:
+  arm-none-eabi-objdump -h firmware.elf
+
+  Now VMA and LMA are real addresses (not 0).
+  .vectors is at 0x08000000 (start of flash)
+  .text follows immediately after .vectors at 0x080001ac
+
+  No .data section appears because our code has no initialized global variables.
+
+Create raw binary:
+  arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+
+  This extracts the loadable sections into a single contiguous binary blob.
+  The binary contains .vectors and .text (and .data if present) exactly as they will be stored in flash.
+
+Flash to board:
+  st-flash --reset write firmware.bin 0x8000000
+
+  Writes firmware.bin to flash starting at address 0x08000000.
+  The board resets and runs the firmware (currently does nothing).
